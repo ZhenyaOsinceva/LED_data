@@ -1,0 +1,50 @@
+import DM
+import pandas as pd
+import warnings
+import numpy as np
+
+warnings.filterwarnings('ignore')
+
+
+#считывание данных
+data_df = pd.read_excel('LED-data.xlsx')
+#вывод данных
+
+def differentModel(typeCovModel,data_df):
+    time = [0.0,5,10.0,15.0,20.0,25.0]
+    K = len(time)
+    N = len(data_df.columns)-1
+    wienerData = DM.DegradationData([], [], [],[4.0,4.0,4.0,4.0,4.0,4.0,4.0,4.0,4.0,4.0,4.0,4.0,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.5,3.5])
+    model = DM.PowerTrendWithCovariance(wienerData,[1,1,1,1],typeCovModel)
+
+    #Заполнение модели
+    for j in range(N):
+        wienerData.time.append(time)
+        wienerData.value.append(np.array(data_df[j+1]))
+        wienerData.delta.append([wienerData.value[j][i+1]-wienerData.value[j][i] for i in range(len(wienerData.value[j])-1)])
+
+    #Оценка параметров
+    x_est = model.estimate_Parametrs([1,1,1,1])
+    print(x_est)
+
+    #Оценка критерии отбора лучшей модели
+    print("AIC: ", model.AIC(x_est))
+    print("BIC: ", model.BIC(x_est))
+
+    #Оценка критерии отбора лучшей модели
+    IMF = DM.IMF(wienerData, model, x_est)
+    print("ИМФ: ", IMF.get())
+    print("Определитель ИМФ", np.linalg.det(IMF.get()))
+    optimalPlan = DM.optimalPlanning(IMF, .1)
+    optimalPlan.minimize()
+
+#Степенная
+differentModel(1 ,data_df)
+
+#Логлинейная differentModel(2)
+
+differentModel(2 ,data_df)
+
+#Модель Аррениуса differentModel(3)
+
+differentModel(3 ,data_df)
