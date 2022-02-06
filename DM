@@ -1,0 +1,711 @@
+# -*- coding: utf-8 -*-
+import numpy as np
+from scipy.optimize import minimize
+import math
+import random
+import matplotlib.pyplot as plt
+import scipy as sp
+from collections import Counter
+
+# Data Storage
+class DegradationData():
+
+    def __init__(self, time, delta, value, covariates=[]):
+        """
+        Keyword arguments:
+        :param time: interval of time when experiment was provided
+        :param delta: array of increment of degradation values
+        :param value: array of degradation values
+        :param covariates: array of covariate shows additional load
+        """
+        self.time = time
+        self.delta = delta
+        self.value = value
+        self.covariates = covariates
+
+    def get_parameter(self):
+        return [self.time, self.delta, self.value, self.covariates]
+
+    def show(self, c=0):
+        if(c == 0):
+            for i in range(len(self.time)):
+                plt.plot(self.time[i],self.value[i])
+            plt.show()
+        else:
+            for i in range(len(self.time)):
+                if(self.covariates[i] == c):
+                    plt.plot(self.time[i],self.value[i])
+            plt.show()
+        return
+
+class GenerateWienerData():
+    def __init__(self, _model):
+        self.model = _model
+
+        # generation moments measurement of degradation value on interval with fix step
+
+    def generatortime(self, _len, _countIntervals):
+        """
+        :param _len: interval of measurement
+        :param _countIntervals: number of parts which divided
+        :return: array of time
+        """
+        # step - step between measurement of degradation value
+        step = _len / _countIntervals
+        return [i * step for i in range(_len + 1)]
+
+        # generation values of degradation processes
+
+    def generator_trend(self, time, x, c=0):
+        """
+        :param time: the time of the experiment
+        :param x: the parameter of model
+        :param c: the value of covariates vector
+        :return: array of value for building function trend
+        """
+        return [self.model.function_M(time[i], x, c) for i in range(len(time))]
+
+        #  generation increments of degradation processes
+
+    def get_Delta(self, time, x, c=0):
+        """
+
+        :param time: the time of the experiment
+        :param x: the parameter of model
+        :param c: the value of covariates vector
+        :return: array of increments of degradation processes
+        """
+        arrayD = np.zeros(len(time) - 1)
+
+        for i in range(len(time) - 1):
+            # increments between time moments
+            delta = self.model.function_trend(time[i + 1], x, c) - self.model.function_trend(time[i], x, c)
+            # calculation of shift
+            muZ = self.model.mu * delta
+            # calculation of scale
+            sigmaZ = np.sqrt(delta) * self.model.sigma
+            # get increments by using standard library random and parametrs shift and scale
+            arrayD[i] = ((random.normalvariate(muZ, sigmaZ)))
+
+        return arrayD
+
+    def get_values(self, delta):
+
+        value = []
+
+        for i in range(len(delta)):
+            value.append([0])
+            for j in range(len(delta[i])):
+                value[i].append(value[i][j]+delta[i][j])
+
+        return value
+
+# Wiener degradation model with linear trend
+class LinearTrend(DegradationData):
+        def __init__(self, data, x, type=0):
+            '''
+            :param data: Data of Degradation Process consist of time, increments and value experiment.
+            :param x:    Array included models parameters such as sigma(scale), mu(drift)
+            :param type: Type is covariate function, which included in some special forms of WienerModel
+            '''
+            self.sigma = x[0]
+            self.mu = x[1]
+            DegradationData.__init__(self, data.time, data.delta, data.value, data.covariates)
+
+        def get_type(self):
+            return LinearTrend
+
+        # function allows to update all main parameters of this model
+        def x(self, data, x):
+            '''
+            :param data: Data of Degradation Process consist of new time, increments and value experiment.
+            :param x:   New array included models parameters such as sigma, mu
+            '''
+            self.sigma = x[0]
+            self.mu = x[1]
+            DegradationData.updateAll(self, data.time, data.delta, data.value)
+
+        # function allows to get all information of this models
+        def get_parameters(self):
+            return [self.sigma, self.mu]
+
+        # function allows to set parameters of this models
+        def set_parameters(self, x):
+            self.sigma = x[0]
+            self.mu = x[1]
+            return
+
+        # fucntion of trend shows the distribution of degradation data
+        def function_trend(self, t, x=[], c=0):
+            return t
+
+        # function of M help to demonstrate function trend
+        def function_M(self, t, x, c = 0):
+            return x[1] * self.function_trend(t)
+
+        # first derivative of function trend on gamma parameter
+        def function_DerGamma_trend(self,t=0, x=0, c = 0):
+            return 0
+
+        # second derivative of function trend on gamma parameter
+        def function_DerGamma2_trend(self, t=0, x=0, c=0):
+            return 0
+
+        # second derivative of function trend on gamma and beta parameters
+        def function_DerGammaBeta_trend(self, t=0, x=0, c=0):
+            return 0
+
+        # first derivative of function trend on beta parameter
+        def function_DerBeta_trend(self, t=0, x=0, c=0):
+            return 0
+
+        # second derivative of function trend on gamma and beta parameter
+        def function_DerBeta2_trend(self, t=0, x=0, c=0):
+            return 0
+
+        # analytic estimation of parameters sigma and mu for Wiener degradation model with linear function trend
+        def estimate_Parametrs(self, x=[]):
+            self.set_parameters([self.estimate_sigma(), self.estimate_mu()])
+            return [self.estimate_sigma(), self.estimate_mu()]
+
+        # analytic estimation parameters sigma
+        def estimate_sigma(self):
+            delta = self.delta
+            time = self.time
+            sigma = 0
+            n = len(delta)
+            m = self.estimate_mu()
+            for i in range(n):
+                sigma1 = 0
+                for j in range(len(time[i]) - 1):
+                    delta_t = self.function_trend(time[i][j + 1]) - self.function_trend(time[i][j])
+                    cur1 = (delta[i][j] - delta_t * m)**2
+                    cur1 /= delta_t
+                    sigma1 += cur1
+                sigma += sigma1
+
+            delete_sum = 0
+            for i in range(n):
+                delete_sum += len(time[i])-1
+
+            sigma /= delete_sum
+            sigma = np.sqrt(sigma)
+            return sigma
+
+        # analytic estimation parameters mu
+        def estimate_mu(self):
+            delta = self.delta
+            time = self.time
+
+            delt_Z = []
+            time_Z = []
+            n = len(delta)
+
+            for i in range(n):
+                delt_Z.append(np.sum(np.array([delta[i][j] for j in range(len(time[i])-1)])))
+                time_Z.append(np.sum(np.array([time[i][j+1] - time[i][j] for j in range(len(time[i])-1)])))
+
+            m = np.sum(delt_Z) / np.sum(time_Z)
+            return m
+
+        # log-likelihood function for MLE estimation
+        def LNf(self, x):
+            delta = self.delta
+            time = self.time
+            n = len(delta)
+            sumk = 0
+            for i in range(n):
+                sumk += len(time[i]) - 1
+            c1 = (sumk / 2) * np.log(2 * np.pi)
+            c2 = sumk * np.log(x[0])
+            s1 = 0
+            p1 = 0
+            for i in range(n):
+                for j in range(len(time[i]) - 1):
+                     m1 = (self.function_trend(time[i][j + 1]) - self.function_trend(time[i][j]))
+                     m = x[1] * m1
+                     if m <= 0 or x[0] <= 0:
+                         return 1000000000000
+
+                     s1 += ((delta[i][j] - m) ** 2) / m1
+                     p1 += np.log(m1)
+            s1 /= 2 * (x[0] ** 2)
+            p1 /= 2
+            sum = c1 + c2 + p1 + s1
+            return sum
+
+        #criterion AIC
+        def AIC(self, x):
+            return 2 * (len(x)) + 2 * self.LNf(x)
+
+        #criterion BIC
+        def BIC(self, x):
+            n = sum([len(self.value[i]) for i in range(len(self.value))])
+            return np.log(n) * len(x) + 2 * self.LNf(x)
+
+        def get_Tq (self, z_q, sigma, mu, t, z0):
+            t_q = 0
+            t_q = pow((z_q * sigma + np.sqrt(pow(z_q*sigma,2) + 4*mu*z0)/(2*mu)),2)
+            return t_q
+
+# Wiener degradation model with power trend
+class PowerTrend(DegradationData):
+
+    def __init__(self, data, x, type=0):
+        '''
+        :param data: Data of Degradation Process consist of time, increments and value experiment.
+        :param x:    Array included models parameters such as sigma(scale), mu(drift), gamma(parameter of trend function),beta(parameter of covariate function)
+        :param type: Type is covariate function, which included in some special forms of WienerModel
+        '''
+
+        self.sigma = x[0]
+        self.mu = x[1]
+        self.gamma = x[2]
+        DegradationData.__init__(self, data.time, data.delta, data.value, data.covariates)
+
+    def get_type(self):
+        return PowerTrend
+
+    # function allows to update all main parameters of this model
+    def updateModel(self, data, x):
+        '''
+        :param data: Data of Degradation Process consist of new time, increments and value experiment.
+        :param x:   New array included models parameters such as sigma, mu
+        '''
+        self.sigma = x[0]
+        self.mu = x[1]
+        self.gamma = x[2]
+        DegradationData.updateAll(self, data.time, data.delta, data.value)
+
+
+    # function allows to get all information of this models
+    def get_parameters(self):
+        return [self.sigma,self.mu,self.gamma]
+
+    # function allows to set parameters of this models
+    def set_parameters(self, x):
+        self.sigma = x[0]
+        self.mu = x[1]
+        self.gamma = x[2]
+        return
+
+    # function of M help to demonstrate function trend
+    def function_M(self, t, x, c = 0):
+        return x[1]*self.function_trend(t, x)
+
+    # fucntion of trend shows the distribution of degradation data
+    def function_trend(self, t, x, c = 0):
+        return math.pow(t,x[2])
+
+    # first derivative of function trend on gamma parameter
+    def function_DerGamma_trend(self, t, x, c=0):
+        if (t == 0):
+            return 0
+        return np.log(t)*math.pow(t, x[2])
+
+    # MLE estimation of parameters array x for Wiener degradation model
+    def estimate_Parametrs(self, x0):
+        x = x0
+        res = minimize(self.LNf, x, method="nelder-mead")
+        res = res.x
+        self.set_parameters(res)
+        return res
+
+    # log-likelihood function for MLE estimation
+    def LNf(self, x):
+        delta = self.delta
+        time = self.time
+
+        n = len(delta)
+        sumk = 0
+        for i in range(n):
+            sumk += len(time[i])-1
+        c1 = (sumk / 2) * np.log(2 * np.pi)
+        c2 = sumk * np.log(x[0])
+        s1 = 0
+        p1 = 0
+        for i in range(n):
+           for j in range(len(delta[i]) - 1):
+                m1 = (self.function_trend(time[i][j + 1], x) - self.function_trend(time[i][j], x))
+                m = x[1] * m1
+                if m <= 0 or x[0] <= 0:
+                    return 1000000000000
+
+                s1 += ((delta[i][j] - m) ** 2) / m1
+                p1 += np.log(m1)
+        s1 /= 2 * (x[0] ** 2)
+        p1 /= 2
+        sum = c1 + c2 + p1 + s1
+        return sum
+
+    # criterion AIC
+    def AIC(self, x):
+        return 2 * (len(x)) + 2 * self.LNf(x)
+
+    # criterion BIC
+    def BIC(self, x):
+        n = sum([len(self.value[i]) for i in range(len(self.value))])
+        return np.log(n) * len(x) + 2 * self.LNf(x)
+
+# Wiener degradation model with power trend and covariate based on power trend/loglinear/arrenius trend
+class PowerTrendWithCovariance(DegradationData):
+
+    def __init__(self, _data, _x, _type):
+        '''
+        :param data: Data of Degradation Process consist of time, increments and value experiment.
+        :param x:    Array included models parameters such as sigma(scale), mu(drift)
+        :param type: Type is covariate function, which included in some special forms of WienerModel
+        '''
+        self.sigma = _x[0]
+        self.mu = _x[1]
+        self.gamma = _x[2]
+        self.beta = _x[3]
+
+        self.type_cov = _type
+
+        DegradationData.__init__(self, _data.time, _data.delta, _data.value, _data.covariates)
+
+    def get_type(self):
+        return PowerTrendWithCovariance
+
+    # функция, позволяющие обновить значения элементов класса
+    def updateModel(self, data, x):
+        self.sigma = x[0]
+        self.mu = x[1]
+        self.gamma = x[2]
+        self.beta = x[3]
+        DegradationData.updateAll(self, data.time, data.delta, data.value, data.covariates)
+        return
+
+    # function allows to get all information of this models
+    def get_parameters(self):
+        return [self.sigma,self.mu, self.gamma,self.beta]
+
+    # function allows to set parameters of this models
+    def set_parameters(self, x):
+        self.sigma = x[0]
+        self.mu = x[1]
+        self.gamma = x[2]
+        self.beta = x[3]
+        return
+
+    # fucntion of covariate shows impact covariate on the distribution of degradation data
+    def function_covariate(self,beta,c):
+        f = 1
+        if (self.type_cov == 1):
+            f = np.exp(beta * c)
+        if (self.type_cov == 2):
+            f = np.exp(beta * np.log(c))
+        if (self.type_cov == 3):
+            f = np.exp(beta / c)
+
+        return f
+
+    def cov_der_gamma(self, beta, c):
+        f = 1
+        if (self.type_cov == 1):
+            f = beta * c
+        if (self.type_cov == 2):
+            f= beta * np.log(c)
+        if (self.type_cov == 3):
+            f = beta / c
+
+        return f
+
+    def cov_der_beta(self, gamma, c):
+        f = 1
+        if (self.type_cov == 1):
+            f =  gamma * c
+        if (self.type_cov == 2):
+            f= gamma * np.log(c)
+        if (self.type_cov == 3):
+            f = gamma / c
+
+        return f
+
+    # function of M help to demonstrate function trend
+    def function_M(self, t, x, c):
+        return x[1]*self.function_trend(t, x, c)
+
+    # fucntion of trend shows the distribution of degradation data
+    def function_trend(self, t, x, c):
+        return math.pow(t/self.function_covariate(x[3],c),x[2])
+
+    # first derivative of function trend on gamma parameter
+    def function_DerGamma_trend(self, t, x, c=0):
+        if t == 0:
+            return 0
+        return  (pow(t,x[2])*np.log(t) - self.cov_der_gamma(x[3],c)*pow(t,x[2]))/pow(self.function_covariate(x[3],c), x[2])
+        #(pow(t/self.function_covariate(x[3],c), x[2])*(np.log(t) - self.cov_der_gamma(x[3],c)))
+
+    # first derivative of function trend on beta paramete
+    def function_DerBeta_trend(self, t, x, c=0):
+        if t == 0:
+            return 0
+        return -self.cov_der_beta(x[2],c)*pow(t/self.function_covariate(x[3],c),x[2])
+
+    # MLE estimation of parameters of array x for Wiener degradation model with linear function trend
+    def estimate_Parametrs(self, x0):
+        x = x0
+        res = minimize(self.LNf, x, method="nelder-mead")
+        res = res.x
+        self.set_parameters(res)
+        return res
+
+    # log-likelihood function for MLE estimation
+    def LNf(self, x):
+        delta = self.delta
+        time = self.time
+        covariates = self.covariates
+
+        k = len(covariates)
+
+        n = len(time)
+        sumk = 0
+
+        for i in range(n):
+            sumk += len(time[i])-1
+        c1 = (sumk / 2) * np.log(2 * np.pi)
+        c2 = sumk * np.log(x[0])
+        s1 = 0
+        p1 = 0
+
+
+        for i in range(n):
+           for j in range(len(delta[i])):
+                m1 = (self.function_trend(time[i][j + 1], x, covariates[i]) - self.function_trend(time[i][j], x, covariates[i]))
+                m = x[1] * m1
+                if m <= 0 or x[0] <= 0:
+                    return 1000000000000
+
+                s1 += ((delta[i][j] - m) ** 2) / m1
+                p1 += np.log(m1)
+
+        s1 /= 2 * (x[0] ** 2)
+        p1 /= 2
+        sum = c1 + c2 + p1 + s1
+        return sum
+
+    #criterion AIC
+    def AIC(self, x):
+        return 2 * (len(x)) + 2 * self.LNf(x)
+
+    # criterion BIC
+    def BIC(self, x):
+        n = sum([len(self.value[i]) for i in range(len(self.value))])
+        return np.log(n) * len(x) + 2 * self.LNf(x)
+
+#  Information Matrix Fisher for class of Wiener Model
+class IMF():
+    def __init__(self, data, model, x=[1,1,1,1]):
+        self.model = model
+        self.data = data
+        self.x = x
+        self.c = data.covariates
+        self.n = len(data.time)
+        self.k = len(data.time[0]) - 1
+        self.time = data.time
+
+    def update_time(self,time):
+        self.time = time
+        return
+
+    def update_cov(self, cov):
+        self.c = cov
+        return
+
+    def R(self, i, j):
+        R_f = self.model.function_trend(self.time[i][j+1], self.x, self.c[i]) - self.model.function_trend(self.time[i][j], self.x, self.c[i])
+        if(R_f==0):
+            return 1
+        return R_f
+
+    def R_G(self, i, j):
+        return  self.model.function_DerGamma_trend(self.time[i][j+1], self.x, self.c[i]) - self.model.function_DerGamma_trend(self.time[i][j], self.x, self.c[i])
+
+    def R_B(self, i, j):
+        return self.model.function_DerBeta_trend(self.time[i][j+1], self.x, self.c[i]) - self.model.function_DerBeta_trend(self.time[i][j], self.x, self.c[i])
+
+    def I11(self):
+            return (2*self.n*self.k)/pow(self.x[0],2)
+
+    def I12(self):
+        return 0
+
+    def I13(self):
+        s = sum([sum([self.R_G(i,j) / self.R(i,j) for j in range(self.k)]) for i in range(self.n)])
+        return s / self.x[0]
+
+    def I14(self):
+        s = sum([sum([self.R_B(i,j) / self.R(i,j) for j in range(self.k)]) for i in range(self.n)])
+        return s / self.x[0]
+
+    def I22(self):
+        s = sum([sum([self.R(i,j) for j in range(self.k)]) for i in range(self.n)])
+        return s/pow(self.x[0],2)
+
+    def I23(self):
+        s = sum([sum([self.R_G(i,j) for j in range(self.k)]) for i in range(self.n)])
+        return (s*self.x[1]) / pow(self.x[0], 2)
+
+    def I24(self):
+        s = sum([sum([self.R_B(i,j) for j in range(self.k)]) for i in range(self.n)])
+        return (s * self.x[1]) / pow(self.x[0], 2)
+
+    def I33(self):
+        s = sum([sum([pow(self.R_G(i,j),2)*(.5/pow(self.R(i,j),2) + pow(self.x[1]/self.x[0],2)/self.R(i,j)) for j in range(self.k)]) for i in range(self.n)])
+        return s
+
+    def I34(self):
+        s = sum([sum([self.R_G(i, j)*self.R_B(i, j)*(.5/pow(self.R(i,j),2)+pow(self.x[1]/self.x[0],2)/self.R(i,j)) for j in range(self.k)]) for i in range(self.n)])
+        return (s)
+
+    def I44(self):
+        s = sum([sum([pow(self.R_B(i,j),2)*(.5/pow(self.R(i,j),2) + pow(self.x[1]/self.x[0],2)/self.R(i,j)) for j in range(self.k)]) for i in range(self.n)])
+        return s
+
+    def get(self):
+        if (self.model.get_type() == LinearTrend):
+            return [[self.I11(), self.I12()], [self.I12(), self.I22()]]
+
+        if (self.model.get_type() == PowerTrend):
+            return [[self.I11(), self.I12(), self.I13()], [self.I12(), self.I22(), self.I23()],
+                    [self.I13(), self.I23(), self.I33()]]
+        if (self.model.get_type() == PowerTrendWithCovariance):
+            return [[self.I11(), self.I12(), self.I13(), self.I14()],
+                    [self.I12(), self.I22(), self.I23(), self.I24()],
+                    [self.I13(), self.I23(), self.I33(), self.I34()],
+                    [self.I14(), self.I24(), self.I34(), self.I44()]]
+
+class optimalPlanning(IMF):
+    def __init__(self, _IMF, eps):
+        self.time = _IMF.data.time
+        self.covariate = _IMF.data.covariates
+        self.eps = eps
+        self.weight = self.getWeightByCov()
+        IMF.__init__(self, _IMF.data, _IMF.model, _IMF.x)
+
+    def getWeightByCov(self):
+        weight = []
+        unicCov = self.getUnicCov()
+        for c in unicCov:
+            weight.append(self.covariate.count(c)/len(self.covariate))
+        return weight
+
+    def getUnicCov(self):
+        unicCov  = np.unique(self.covariate)
+        return unicCov
+
+    def getNewCovariateVector(self, weight, unicCov):
+        covariate = []
+        n = len(self.covariate)
+        countCov = [int(weight[i]*n) for i in range(len(weight)-1)]
+        countCov.append(n - sum(countCov))
+        for i in range(len(unicCov)):
+            for j in range(int(countCov[i])):
+                covariate.append(unicCov[i])
+
+        return covariate
+
+    def get_weight(self, weight):
+        covariateVector = self.getNewCovariateVector(weight, self.getUnicCov())
+        IMF.update_cov(self,covariateVector)
+        return IMF.get(self)
+
+    def fine_weight(self,weight):
+        return 1-sum(weight)
+
+    def get_covariate(self, covariate):
+        covariateVector = self.getNewCovariateVector(self.weight, covariate)
+
+        IMF.update_cov(self,covariateVector)
+        return  IMF.get(self)
+
+    def get_time(self, time):
+        newTime = [time for i in range(len(self.time))]
+        IMF.update_time(self,newTime)
+        return  IMF.get(self)
+
+    def fine_time(self, time):
+        fine = 0
+        for i in range(len(time)-1):
+            if(time[i+1]-time[i] < 1):
+                fine += pow(time[i+1]-time[i],2)
+        return fine
+
+    def get_D(self, attr, option):
+        if (option == 'time'):
+            return -np.linalg.det(self.get_time(attr))
+        if (option == 'weight'):
+            print(attr)
+            return -np.linalg.det(self.get_weight(attr)) #+ self.fine_weight(attr)
+        if (option == 'cov'):
+            return -np.linalg.det(self.get_covariate(attr))
+
+    def get_A(self, attr, option):
+        if (option == 'time'):
+            return np.linalg.trace(np.linalg.inv(self.get_time(attr)))
+        if (option == 'weight'):
+            return np.linalg.trace(np.linalg.inv(self.get_weight(attr)))
+        if (option == 'cov'):
+
+            return np.linalg.trace(np.linalg.inv(self.get_covariate(attr)))
+
+
+    #https://habr.com/ru/post/333356/ - BFGS SLSQP
+    #https://overcoder.net/q/594793/scipyoptimize-%D0%BA%D0%B0%D0%BA-%D0%BE%D0%B3%D1%80%D0%B0%D0%BD%D0%B8%D1%87%D0%B8%D1%82%D1%8C-%D0%B7%D0%BD%D0%B0%D1%87%D0%B5%D0%BD%D0%B8%D1%8F-%D0%B0%D1%80%D0%B3%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D0%BE%D0%B2
+    def minimize(self):
+
+        #задание начального плана
+        #получение уникальных нагрузок
+        p0_plan = self.getUnicCov()
+        #получение уникальных весов для каждой нагрузки
+        p0_weight = [0.5, 0.5]
+        #получение оптимальных точек по времени
+        p0_time = self.time[0]
+        IMF_start = 0
+        IMF_new = -self.get_D(p0_time, 'time')
+        while (abs(IMF_new - IMF_start)> self.eps):
+
+            IMF_start = IMF_new
+
+            #print('Начальный функционал от ИМФ - time:', IMF_start)
+            my_constraints = ({'type': 'eq', "fun": self.fine_time})
+            p_time = sp.optimize.minimize(self.get_D, p0_time, args=('time'),
+                                     bounds=((0, 40),(0, 40),(0, 40),(0, 40),(0, 40),(0, 40)),
+                                     constraints=my_constraints, method='TNC', jac=None, tol=None, callback=None)
+
+            #print('Конечный функционал от ИМФ - time:', -p_time.fun, 'Конечный значения:', p_time.x)
+            self.time = p_time.x
+            IMF.update_time(self, [p_time.x for i in range(len(self.covariate))])
+
+
+            #print('Начальный функционал от ИМФ - cov:', -self.get_D(p0_plan, 'cov'))
+            p_cov = sp.optimize.minimize(self.get_D, p0_plan, args=('cov'),
+                                          bounds=((3, 5), (3, 5)),
+                                          method='TNC', jac=None, tol=None, callback=None)
+
+            #print('Конечный функционал от ИМФ - cov:', -p_cov.fun, 'Конечный значения:', p_cov.x)
+
+            self.covariate = self.getNewCovariateVector(self.weight,  p_cov.x)
+            IMF.update_cov(self,  self.covariate)
+            IMF_new = p_cov.fun
+
+            #print('Начальный функционал от ИМФ - weight:', IMF_new)
+            my_constraints = ({'type': 'eq', "fun": self.fine_weight})
+            p_weight = sp.optimize.minimize(self.get_D, p0_weight, args=('weight'),bounds=((0, 1),(0, 1)),
+                                            constraints=my_constraints, method='TNC', jac=None, tol=None, callback=None)
+
+            #print('Конечный функционал от ИМФ - weight:', -p_weight.fun, 'Конечный значения:', p_weight.x)
+            self.weight = p_weight.x
+
+            IMF_new =  -p_weight.fun
+
+        print("Конечная ИМФ: ", IMF_new)
+        print(p_time.x, p0_weight, p_cov.x)
+        p0_time, p0_weight, p0_plan =  p_time.x, p_weight.x, p_cov.x
+
+        #print("global minimum: x = [%.4f, %.4f], f(x0) = %.12f" % (p.x[0], p.x[1], p.fun))
+
+        return  p_time.x,p_weight.x, p_cov.x
+
